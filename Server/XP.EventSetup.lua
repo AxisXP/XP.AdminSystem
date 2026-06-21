@@ -1,6 +1,6 @@
 --!strict
--- XP.EventSetup.lua
--- Centralized creator/registry for Remotes and Bindables.
+-- Server/XP.EventSetup.lua
+-- Centralized creator/getter for RemoteEvents, RemoteFunctions, BindableEvents, and BindableFunctions.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
@@ -12,14 +12,7 @@ export type Kind = "RemoteEvent" | "RemoteFunction" | "BindableEvent" | "Bindabl
 export type Spec = {
 	Name: string,
 	Kind: Kind,
-
-	-- Optional parent override.
-	-- Remotes usually go in ReplicatedStorage.
-	-- Bindables usually go in ServerScriptService.
 	Parent: Instance?,
-
-	-- If true, returns existing instance only if it matches Kind.
-	-- If false, it will still try to reuse by name but warn on mismatches.
 	Strict: boolean?,
 }
 
@@ -32,10 +25,10 @@ local function getDefaultParent(kind: Kind): Instance
 	if kind == "RemoteEvent" or kind == "RemoteFunction" then
 		return DEFAULT_REMOTE_PARENT
 	end
- վերադարձ DEFAULT_BINDABLE_PARENT
+	return DEFAULT_BINDABLE_PARENT
 end
 
-local function createByKind(name: string, kind: Kind, parent: Instance): Instance
+local function createInstance(name: string, kind: Kind, parent: Instance): Instance
 	local inst: Instance
 
 	if kind == "RemoteEvent" then
@@ -55,11 +48,13 @@ local function createByKind(name: string, kind: Kind, parent: Instance): Instanc
 	return inst
 end
 
-local function findChildDeep(parent: Instance, name: string): Instance?
-	local direct = parent:FindFirstChild(name)
-	if direct then
-		return direct
+local function findMatchingChild(parent: Instance, name: string): Instance?
+	local found = parent:FindFirstChild(name)
+	if found then
+		return found
 	end
+
+	-- Optional fallback if the object was placed somewhere under the folder
 	return parent:FindFirstChild(name, true)
 end
 
@@ -68,16 +63,16 @@ function EventSetup.Get(name: string): Instance?
 end
 
 function EventSetup.GetOrCreate(spec: Spec): Instance
-	assert(type(spec) == "table", "EventSetup.GetOrCreate(spec) expects a table")
+	assert(type(spec) == "table", "EventSetup.GetOrCreate expects a spec table")
 	assert(type(spec.Name) == "string" and spec.Name ~= "", "EventSetup: spec.Name must be a non-empty string")
 	assert(type(spec.Kind) == "string", "EventSetup: spec.Kind must be a string")
 
 	local name = spec.Name
-	local kind = spec.Kind
+	local kind = spec.Kind :: Kind
 	local strict = spec.Strict == true
 	local parent = spec.Parent or getDefaultParent(kind)
 
-	-- Cache hit
+	-- Cache first
 	local cached = cache[name]
 	if cached and cached.Parent ~= nil then
 		if cached.ClassName == kind then
@@ -85,15 +80,11 @@ function EventSetup.GetOrCreate(spec: Spec): Instance
 		end
 
 		if strict then
-			error(("[EventSetup] Cached instance '%s' exists but is '%s', expected '%s'"):format(
-				name,
-				cached.ClassName,
-				kind
-			))
+			error(("[EventSetup] '%s' exists in cache as %s, expected %s"):format(name, cached.ClassName, kind))
 		end
 	end
 
-	-- Direct child first
+	-- Direct child
 	local existing = parent:FindFirstChild(name)
 	if existing then
 		if existing.ClassName == kind then
@@ -102,7 +93,7 @@ function EventSetup.GetOrCreate(spec: Spec): Instance
 		end
 
 		if strict then
-			error(("[EventSetup] '%s' exists under %s but is '%s', expected '%s'"):format(
+			error(("[EventSetup] '%s' exists under %s but is %s, expected %s"):format(
 				name,
 				parent:GetFullName(),
 				existing.ClassName,
@@ -110,7 +101,7 @@ function EventSetup.GetOrCreate(spec: Spec): Instance
 			))
 		end
 
-		warn(("[EventSetup] '%s' exists but is '%s', expected '%s'. Reusing the existing instance anyway."):format(
+		warn(("[EventSetup] '%s' exists but is %s, expected %s. Reusing existing instance."):format(
 			name,
 			existing.ClassName,
 			kind
@@ -119,8 +110,8 @@ function EventSetup.GetOrCreate(spec: Spec): Instance
 		return existing
 	end
 
-	-- Fallback deep search
-	local deep = findChildDeep(parent, name)
+	-- Deep search fallback
+	local deep = findMatchingChild(parent, name)
 	if deep then
 		if deep.ClassName == kind then
 			cache[name] = deep
@@ -128,26 +119,31 @@ function EventSetup.GetOrCreate(spec: Spec): Instance
 		end
 
 		if strict then
-			error(("[EventSetup] Deep found '%s' but class mismatch: '%s' vs '%s'"):format(
+			error(("[EventSetup] '%s' found deeper under %s but is %s, expected %s"):format(
 				name,
+				parent:GetFullName(),
 				deep.ClassName,
 				kind
 			))
 		end
 
-		warn(("[EventSetup] Deep found '%s' but class mismatch. Reusing existing instance."):format(name))
+		warn(("[EventSetup] '%s' found deeper but class mismatch (%s vs %s). Reusing existing instance."):format(
+			name,
+			deep.ClassName,
+			kind
+		))
 		cache[name] = deep
 		return deep
 	end
 
 	-- Create new
-	local created = createByKind(name, kind, parent)
+	local created = createInstance(name, kind, parent)
 	cache[name] = created
 	return created
 end
 
 function EventSetup.Setup(specs: {Spec}): {[string]: Instance}
-	assert(type(specs) == "table", "EventSetup.Setup(specs) expects an array of specs")
+	assert(type(specs) == "table", "EventSetup.Setup expects an array of specs")
 
 	local result: {[string]: Instance} = {}
 
@@ -159,29 +155,20 @@ function EventSetup.Setup(specs: {Spec}): {[string]: Instance}
 	return result
 end
 
-function EventSetup.SetupFolder(folderName: string, specs: {Spec}, parent: Instance?): Folder
-	assert(type(folderName) == "string" and folderName ~= "", "EventSetup.SetupFolder(folderName, specs) requires a folder name")
+function EventSetup.SetupRemote(name: string, parent: Instance?, kind: Kind?): Instance
+	return EventSetup.GetOrCreate({
+		Name = name,
+		Kind = kind or "RemoteEvent",
+		Parent = parent or DEFAULT_REMOTE_PARENT,
+	})
+end
 
-	local rootParent = parent or ReplicatedStorage
-	local folder = rootParent:FindFirstChild(folderName)
-
-	if folder and not folder:IsA("Folder") then
-		error(("[EventSetup] '%s' exists under %s but is not a Folder"):format(folderName, rootParent:GetFullName()))
-	end
-
-	if not folder then
-		folder = Instance.new("Folder")
-		folder.Name = folderName
-		folder.Parent = rootParent
-	end
-
-	for _, spec in ipairs(specs) do
-		spec.Parent = spec.Parent or folder
-		local inst = EventSetup.GetOrCreate(spec)
-		result[spec.Name] = inst
-	end
-
-	return folder
+function EventSetup.SetupBindable(name: string, parent: Instance?, kind: Kind?): Instance
+	return EventSetup.GetOrCreate({
+		Name = name,
+		Kind = kind or "BindableEvent",
+		Parent = parent or DEFAULT_BINDABLE_PARENT,
+	})
 end
 
 function EventSetup.ClearCache()
