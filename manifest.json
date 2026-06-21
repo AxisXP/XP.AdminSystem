@@ -1,1 +1,21 @@
-
+{
+  "Version": "1.0.0",
+  "Server": [
+    { "Name": "XP.OS", "Path": "Server/XP.OS.lua" },
+    { "Name": "XP.EventSetup", "Path": "Server/XP.EventSetup.lua" }
+  ],
+  "Client": [
+    { "Name": "XP.ClientOS", "Path": "Client/XP.ClientOS.lua" }
+  ],
+  "Shared": [
+    { "Name": "Config", "Path": "Shared/Config.lua" },
+    { "Name": "Util", "Path": "Shared/Util.lua" }
+  ],
+  "Commands": [
+    { "Name": "Teleport", "Path": "Server/Commands/Teleport.lua" },
+    { "Name": "Kick", "Path": "Server/Commands/Kick.lua" }
+  ],
+  "ClientAddons": [
+    { "Name": "AdminList", "Path": "Client/Addons/AdminList.lua" }
+  ]
+}
