@@ -1,13 +1,12 @@
 --!strict
--- XP.Config.lua
--- Shared configuration for the admin system.
+-- Shared/Config.lua
+-- Central configuration for the admin system.
 
 local HttpService = game:GetService("HttpService")
 
 local Config = {}
 
 Config.SystemName = "XP.AdminSystem"
-
 Config.Version = "1.0.0"
 Config.Prefix = "~"
 
@@ -23,7 +22,6 @@ Config.RemoteNames = {
 	ListResponse = "Admin.XP_List.Response",
 	RankRequest = "Admin.XP_Rank.Request",
 	RankResponse = "Admin.XP_Rank.Response",
-
 	IntroShow = "Admin.Intro.Show",
 	IntroSeen = "Admin.Intro.Seen",
 	AnonSync = "Admin.Anon.Sync",
@@ -58,9 +56,9 @@ Config.Secrets = {
 	Webhook2 = "AdminLogWebhook2",
 }
 
-function Config.GetSecret(name: string): string?
+function Config.GetSecret(secretName: string): string?
 	local ok, value = pcall(function()
-		return HttpService:GetSecret(name)
+		return HttpService:GetSecret(secretName)
 	end)
 
 	if ok and typeof(value) == "string" and value ~= "" then
@@ -73,14 +71,14 @@ end
 function Config.GetWebhookUrls(): {string}
 	local urls = {}
 
-	local w1 = Config.GetSecret(Config.Secrets.Webhook1)
-	if w1 then
-		table.insert(urls, w1)
+	local webhook1 = Config.GetSecret(Config.Secrets.Webhook1)
+	if webhook1 then
+		table.insert(urls, webhook1)
 	end
 
-	local w2 = Config.GetSecret(Config.Secrets.Webhook2)
-	if w2 then
-		table.insert(urls, w2)
+	local webhook2 = Config.GetSecret(Config.Secrets.Webhook2)
+	if webhook2 then
+		table.insert(urls, webhook2)
 	end
 
 	return urls
